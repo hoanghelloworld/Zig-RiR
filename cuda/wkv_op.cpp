@@ -1,5 +1,4 @@
 #include <torch/extension.h>
-#include "wkv_cuda.h"
 
 void cuda_forward(int B, int T, int C, float *w, float *u, float *k, float *v, float *y);
 void cuda_backward(int B, int T, int C, float *w, float *u, float *k, float *v, float *gy, float *gw, float *gu, float *gk, float *gv);

@@ -5,21 +5,14 @@ import torch.nn.functional as F
 import math
 from einops import rearrange, repeat
 
+
+
 up_kwargs = {'mode': 'bilinear', 'align_corners': True}
 T_MAX = 512*64
+from torch.utils.cpp_extension import load
+wkv_cuda = load(name="wkv", sources=["./cuda/wkv_op.cpp", "./cuda/wkv_cuda.cu"],
+                verbose=True, extra_cuda_cflags=['-res-usage', '--maxrregcount 60', f'-DTmax={T_MAX}'])
 
-# Try to load CUDA extension, fallback to CPU implementation if failed
-try:
-    from torch.utils.cpp_extension import load
-    wkv_cuda = load(name="wkv", sources=["./cuda/wkv_op.cpp", "./cuda/wkv_cuda.cu"],
-                    verbose=True, extra_cuda_cflags=['-res-usage', '--maxrregcount 60', f'-DTmax={T_MAX}'])
-    CUDA_AVAILABLE = True
-    print("CUDA WKV extension loaded successfully")
-except Exception as e:
-    print(f"Warning: Failed to load CUDA extension: {e}")
-    print("Falling back to CPU implementation")
-    CUDA_AVAILABLE = False
-    wkv_cuda = None
 
 class WKV(torch.autograd.Function):
     @staticmethod
@@ -29,10 +22,6 @@ class WKV(torch.autograd.Function):
         ctx.C = C
         assert T <= T_MAX
         assert B * C % min(C, 1024) == 0
-
-        if not CUDA_AVAILABLE or not w.is_cuda:
-            # CPU fallback implementation
-            return WKV._cpu_forward(B, T, C, w, u, k, v)
 
         half_mode = (w.dtype == torch.half)
         bf_mode = (w.dtype == torch.bfloat16)
@@ -50,46 +39,7 @@ class WKV(torch.autograd.Function):
         return y
 
     @staticmethod
-    def _cpu_forward(B, T, C, w, u, k, v):
-        """CPU fallback implementation of WKV attention"""
-        device = w.device
-        dtype = w.dtype
-        y = torch.zeros((B, T, C), device=device, dtype=dtype)
-        
-        for b in range(B):
-            for c in range(C):
-                aa = 0.0
-                bb = 0.0
-                pp = -1e38
-                
-                for t in range(T):
-                    kk = k[b, t, c]
-                    vv = v[b, t, c]
-                    ww = u[c] + kk
-                    p = max(pp, ww)
-                    e1 = torch.exp(torch.tensor(pp - p, device=device))
-                    e2 = torch.exp(torch.tensor(ww - p, device=device))
-                    y[b, t, c] = (e1 * aa + e2 * vv) / (e1 * bb + e2)
-                    
-                    wkv = w[c] + pp
-                    pp = max(wkv, ww)
-                    e1_ = torch.exp(torch.tensor(wkv - pp, device=device))
-                    e2_ = torch.exp(torch.tensor(ww - pp, device=device))
-                    aa = e1_ * aa + e2_ * vv
-                    bb = e1_ * bb + e2_
-        
-        return y
-
-    @staticmethod
     def backward(ctx, gy):
-        if not CUDA_AVAILABLE:
-            # Simple gradient approximation for CPU fallback
-            B, T, C = ctx.B, ctx.T, ctx.C
-            w, u, k, v = ctx.saved_tensors
-            return (None, None, None, 
-                    torch.zeros_like(w), torch.zeros_like(u), 
-                    torch.zeros_like(k), torch.zeros_like(v))
-        
         B = ctx.B
         T = ctx.T
         C = ctx.C
@@ -122,11 +72,9 @@ class WKV(torch.autograd.Function):
             gu = torch.sum(gu, dim=0)
             return (None, None, None, gw, gu, gk, gv)
 
+
 def RUN_CUDA(B, T, C, w, u, k, v):
-    if CUDA_AVAILABLE and w.is_cuda:
-        return WKV.apply(B, T, C, w.cuda(), u.cuda(), k.cuda(), v.cuda())
-    else:
-        return WKV.apply(B, T, C, w, u, k, v)
+    return WKV.apply(B, T, C, w.cuda(), u.cuda(), k.cuda(), v.cuda())
 
 
 def q_shift(input, shift_pixel=1, gamma=1 / 4):
