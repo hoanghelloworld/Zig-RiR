@@ -78,7 +78,7 @@ class loss(nn.Module):
 
 
 def get_model(args2):
-    model = R_RNR(channels=[64, 128, 256, 512], num_classes=args2.nclass, img_size=args2.crop_size[0], in_chans=3)
+    model = ZRiR(channels=[64, 128, 256, 512], num_classes=args2.nclass, img_size=args2.crop_size[0], in_chans=3)
     model = loss(model, args2)
     model = model.cuda()
     return model

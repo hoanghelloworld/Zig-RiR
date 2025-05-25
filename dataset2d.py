@@ -23,6 +23,7 @@ class Data(data.Dataset):
         self.dataset = dataset
         self.images = []
         self.labels = []
+        self.names = []  # Add this line
 
 
         if self.dataset == 'acdc' or self.dataset == 'synapse':

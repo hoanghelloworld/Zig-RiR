@@ -171,11 +171,11 @@ def Eval(dataloader_test, model, args2):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train segmentation network')
-    parser.add_argument("--dataset", type=str, default='')
-    parser.add_argument("--crop_size", type=int, nargs='+', default=[256, 256], help='H, W')
+    parser.add_argument("--dataset", type=str, default='custom')
+    parser.add_argument("--crop_size", type=int, nargs='+', default=[512, 512], help='H, W')
     parser.add_argument("--nclass", type=int, default=2)
+    parser.add_argument("--val_batchsize", type=int, default=1)
     args2 = parser.parse_args()
-
     return args2
 
 
